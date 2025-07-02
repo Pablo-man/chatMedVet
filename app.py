@@ -5,7 +5,6 @@ from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 from pypdf import PdfReader
-from docx import Document
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -30,7 +29,7 @@ app = FastAPI()
 # === Habilitar CORS para React (localhost:3000) ===
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Cambiar si React corre en otro origen
+    allow_origins=["*"],  # Cambiar si React corre en otro origen
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
