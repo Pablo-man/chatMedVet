@@ -1,119 +1,140 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sentence_transformers import SentenceTransformer
+from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance, PointStruct
+from pypdf import PdfReader
+from docx import Document
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai
-from docx import Document
-import traceback 
 
-# Cargar archivo .env con las credenciales de la API
+# === Cargar configuración de entorno ===
 load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
-# Configurar FastAPI
+# Validación de claves
+if not GOOGLE_API_KEY or not QDRANT_API_KEY or not QDRANT_URL:
+    raise Exception("Faltan variables de entorno requeridas.")
+
+# === Configurar modelo de Gemini ===
+genai.configure(api_key=GOOGLE_API_KEY)
+modelo = genai.GenerativeModel("gemini-1.5-flash")
+
+# === Inicializar FastAPI ===
 app = FastAPI()
 
-# Permitir que React se comunique con FastAPI
+# === Habilitar CORS para React (localhost:3000) ===
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permitir cualquier origen, puedes poner tu dominio específico
+    allow_origins=["http://localhost:5173"],  # Cambiar si React corre en otro origen
     allow_credentials=True,
-    allow_methods=["*"],  # Permitir todos los métodos HTTP
-    allow_headers=["*"],  # Permitir todos los encabezados
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Configurar Google Generative AI (Gemini)
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-genai.configure(api_key=GOOGLE_API_KEY)
-modelo = genai.GenerativeModel("gemini-2.0-flash-exp")
-print("GOOGLE_API_KEY:", GOOGLE_API_KEY)
+# === Constantes ===
+UPLOAD_FOLDER = "docs_upload"
+COLLECTION_NAME = "documentos_qdrant"
+CHUNK_SIZE = 500
+MODEL_DIM = 384
 
-# Ruta al documento Word
-ruta_docx = "./preguntas_frecuentes.docx"
+# Crear carpeta si no existe
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def leer_docx(ruta):
-    doc = Document(ruta)
-    texto = "\n".join([p.text for p in doc.paragraphs])
-    return texto
+# === Inicializar modelo de embeddings y Qdrant ===
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-contenido_docx = leer_docx(ruta_docx)
+qdrant_client = QdrantClient(
+    url=QDRANT_URL,
+    api_key=QDRANT_API_KEY
+)
 
-# Modelo de solicitud para recibir preguntas
+def init_qdrant_collection():
+    qdrant_client.recreate_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(size=MODEL_DIM, distance=Distance.COSINE)
+    )
+
+def process_pdf_to_chunks(file_path: str, chunk_size: int = CHUNK_SIZE):
+    reader = PdfReader(file_path)
+    full_text = ""
+    for i in range (len(reader.pages)):
+        page = reader.pages[i]
+        if page.extract_text():
+            full_text += page.extract_text()
+    chunks = [full_text[i:i + chunk_size] for i in range(0, len(full_text), chunk_size)]
+    vectors = model.encode(chunks)
+    return chunks, vectors
+
+@app.post("/upload-doc/")
+async def upload_doc(file: UploadFile = File(...)):
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un .pdf")
+
+    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+
+    chunks, vectors = process_pdf_to_chunks(file_path)
+    init_qdrant_collection()
+
+    points = [
+        PointStruct(id=i, vector=vectors[i].tolist(), payload={"text": chunks[i]})
+        for i in range(len(chunks))
+    ]
+
+    qdrant_client.upsert(collection_name=COLLECTION_NAME, points=points)
+
+    return {
+        "message": f"{len(points)} fragmentos insertados en Qdrant.",
+        "documento": file.filename
+    }
+
 class ChatRequest(BaseModel):
-    question: str
+    query: str
 
-# Modelo para calificación de respuesta
-class RatingRequest(BaseModel):
-    message_index: int
-    rating: str
-    previous_response: str
-
-# Ruta para la página principal (puedes crear un HTML si lo deseas)
-@app.get("/")
-async def home():
-    return {"message": "Bienvenido a la API del chatbot"}
-
-# Endpoint para el chatbot que utiliza el contenido del documento Word
-@app.post("/chatbot")
-async def chatbot_con_docx(request: ChatRequest):
+@app.post("/chatbot/")
+async def chatbot(request: ChatRequest):
     try:
-        pregunta = request.question
+        query = request.query
+        query_vector = model.encode([query])[0]
 
-        if not pregunta:
-            raise HTTPException(status_code=400, detail="No se recibió ninguna pregunta")
+        results = qdrant_client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=4
+        )
+
+        context = "\n\n".join([r.payload["text"] for r in results])
 
         prompt = f"""
-        Basándote únicamente en el siguiente contenido del documento Word, responde de forma clara y útil:
+Eres un asistente que responde preguntas usando SOLO la información del contexto proporcionado.
 
-        \"\"\"{contenido_docx}\"\"\" 
+Responde con un lenguaje natural, claro, profesional y bien organizado para que el usuario entienda fácilmente.
 
-        Pregunta: {pregunta}
-        Respuesta:
-        """
-        respuesta = modelo.generate_content(prompt).text
+Usa formato limpio, evitando saltos de línea innecesarios o fragmentos incompletos. 
 
-        return {"respuesta": respuesta}
+Si vas a dar horarios u otra información por días, organízala en listas con viñetas claras.
 
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+Si la información está incompleta o falta, responde: "No tengo suficiente información para responder a esa pregunta."
 
-# Endpoint para manejar las calificaciones y ajustar la respuesta
-@app.post("/rate_response")
-async def rate_response(request: RatingRequest):
-    try:
-        message_index = request.message_index  # Índice del mensaje
-        rating = request.rating  # Calificación ("Alto", "Medio", "Bajo")
-        previous_response = request.previous_response  # Respuesta anterior que el usuario calificó
+Si la pregunta no está relacionada con el contenido, responde cordialmente:
+"La pregunta no está relacionada con el contenido de la organización. Por favor, formula una consulta relacionada con la organización."
 
-        if rating not in ["Alto", "Medio", "Bajo"]:
-            raise HTTPException(status_code=400, detail="Calificación inválida. Las opciones son 'Alto', 'Medio' o 'Bajo'.")
+Contexto:
+\"\"\"{context}\"\"\"
 
-        # Generar la nueva respuesta basada en la calificación
-        if rating == "Alto":
-            respuesta_ajustada = "Respuesta perfecta. No hay cambios necesarios."
-        elif rating == "Medio":
-            respuesta_ajustada = "La respuesta es buena, pero necesita algunos ajustes para ser más precisa."
-        else:
-            respuesta_ajustada = "La respuesta no es útil. Necesitamos mejorar la propuesta."
+Pregunta: {query}
 
-        # Crear un prompt para mejorar la respuesta según la calificación y la respuesta anterior
-        prompt_nueva_respuesta = f"""
-        Basándote únicamente en el siguiente contenido del documento Word, ajusta la siguiente respuesta en función de la calificación dada:
-        
-        Calificación: {rating}
-        Respuesta anterior: {previous_response}
-        
-        \"\"\"{contenido_docx}\"\"\" 
-        
-        Mejora la respuesta anterior según la calificación recibida:
-        Respuesta ajustada:
-        """
+Respuesta completa y bien formateada:
+"""
 
-        nueva_respuesta = modelo.generate_content(prompt_nueva_respuesta).text
-
-        # Devolver la respuesta ajustada junto con el mensaje original
-        return {"respuesta": nueva_respuesta, "calificacion": respuesta_ajustada}
+        response = modelo.generate_content(prompt)
+        return {"respuesta": response.text.strip()}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Ocurrió un error al procesar la calificación.")
+        raise HTTPException(status_code=500, detail=str(e))
