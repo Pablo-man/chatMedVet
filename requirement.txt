@@ -1,0 +1,7 @@
+qdrant-client[fastembed]
+fastapi
+uvicorn 
+google-generativeai 
+python-dotenv
+sentence-transformers
+python-multipart
