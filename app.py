@@ -6,6 +6,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 from pypdf import PdfReader
 import os
+import os
+os.environ["TRANSFORMERS_CACHE"] = "/tmp/transformers"
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/transformers"
 from dotenv import load_dotenv
 import google.generativeai as genai
 
