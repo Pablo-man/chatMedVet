@@ -1,6 +1,0 @@
-*.pt
-*.bin
-*.onnx
-*.pkl
-.cache/
-models/

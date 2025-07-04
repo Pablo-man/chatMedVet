@@ -1,0 +1,22 @@
+name: MedVet CD
+
+on:
+  push:
+    branches: ["v2.0"]
+
+jobs:
+  login-push-medvetChat:
+    uses: ./.github/workflows/docker.yml
+    secrets:
+      docker_password: ${{ secrets.DOCKER_PASSWORD }}
+      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      repository_name: ${{ secrets.DOCKER_REPOSITORY_NAME }}
+  
+  ec2-cd-medvetChat:
+    needs: [login-push-medvetChat]
+    if: always()
+    uses: ./.github/workflows/aws.yml
+    secrets:
+      ec2_host: ${{ secrets.AWS_HOST }}
+      ec2_key: ${{ secrets.AWS_KEY }}
+      docker_username: ${{ secrets.DOCKER_USERNAME }}

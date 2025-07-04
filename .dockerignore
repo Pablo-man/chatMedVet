@@ -1,0 +1,26 @@
+__pycache__/
+.env
+boot/
+
+# Entornos virtuales
+venv/
+env/
+.venv/
+
+# Archivos grandes o temporales
+*.pkl
+*.h5
+*.pt
+*.zip
+*.tar.gz
+*.csv
+*.db
+
+# Cachés de Python
+__pycache__/
+.ipynb_checkpoints/
+
+# Otros
+.DS_Store
+Procfile
+setup.sh

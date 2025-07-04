@@ -72,6 +72,11 @@ def process_pdf_to_chunks(file_path: str, chunk_size: int = CHUNK_SIZE):
     vectors = model.encode(chunks)
     return chunks, vectors
 
+@app.get("/")
+def read_root():
+    return {"status": "ok"}
+
+
 @app.post("/upload-doc/")
 async def upload_doc(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):

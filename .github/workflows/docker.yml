@@ -1,0 +1,29 @@
+name: Build and push microservice image
+
+on: 
+  workflow_call:
+    secrets:
+      docker_username:
+        required: true
+      docker_password:
+        required: true
+      repository_name:
+        required: true
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Container Registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.docker_username }}
+          password: ${{ secrets.docker_password }}
+
+      - name: Build and push image
+        working-directory: ./
+        run: |
+          docker build -t ${{ secrets.docker_username }}/${{ secrets.repository_name }}:latest .
+          docker push ${{ secrets.docker_username }}/${{ secrets.repository_name }}:latest

@@ -1,3 +1,9 @@
 __pycache__/
 .env
-boot/
+qdrant/
+docs_upload/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.db

@@ -1,0 +1,49 @@
+name: Docker-AWS Setup & Update & Run new images
+
+on:
+  workflow_call:
+    secrets:
+      docker_username:
+        required: true
+      ec2_host:
+        required: true
+      ec2_key:
+        required: true
+
+jobs:
+  connect_update:
+    runs-on: ubuntu-latest
+    steps:
+    
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: SSH into EC2 and Deploy Application
+      uses: appleboy/ssh-action@v1.2.0
+      with:
+        host: ${{ secrets.ec2_host }}
+        username: ubuntu
+        key: ${{ secrets.ec2_key }}
+        script: |
+          if ! command -v docker &> /dev/null; then
+            sudo apt update
+            sudo apt install -y docker.io
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            sudo usermod -aG docker $USER
+            sudo systemctl restart docker
+          else
+            echo "Docker ya está instalado."
+          fi
+
+          if ! sudo systemctl is-active --quiet docker; then
+            sudo systemctl start docker
+          fi  
+
+          cd /home/ubuntu
+
+          sudo docker pull ${{ secrets.docker_username }}/${{ secrets.repository_name }}:latest
+          sudo docker stop medvetChat || true
+          sudo docker rm medvetChat || true
+          sudo docker run -d --name medvetChat -p 8000:8000 ${{ secrets.docker_username }}/${{ secrets.repository_name }}:latest
+          echo "Aplicación desplegada y ejecutándose en el contenedor 'medvetChat'."
