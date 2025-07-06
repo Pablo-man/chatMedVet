@@ -109,39 +109,61 @@ async def chatbot(request: ChatRequest):
     try:
         query = request.query
         query_vector = model.encode([query])[0]
-
         results = qdrant_client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,
             limit=4
         )
-
         context = "\n\n".join([r.payload["text"] for r in results])
-
+        
+        # Detectar saludos y preguntas casuales
+        casual_greetings = ["hola", "hello", "hi", "buenas", "saludos", "que tal", "como estas"]
+        is_casual = any(greeting in query.lower() for greeting in casual_greetings)
+        
         prompt = f"""
-Eres un asistente que responde preguntas usando SOLO la información del contexto proporcionado.
+Eres un asistente virtual especializado en veterinaria que responde preguntas usando SOLO la información del contexto proporcionado.
 
-Responde con un lenguaje natural, claro, profesional y bien organizado para que el usuario entienda fácilmente.
+INSTRUCCIONES IMPORTANTES:
 
-Usa formato limpio, evitando saltos de línea innecesarios o fragmentos incompletos. 
+1. PARA SALUDOS O PREGUNTAS CASUALES (como "hola", "¿cómo estás?", etc.):
+   - Responde de manera amigable y cordial
+   - Preséntate como asistente de la veterinaria
+   - Sugiere temas específicos que pueden preguntar como:
+     * Servicios veterinarios disponibles
+     * Horarios de atención
+     * Cuidado de mascotas
+     * Procedimientos médicos
+     * Precios y consultas
+   - Invita a hacer preguntas específicas
 
-Si vas a dar horarios u otra información por días, organízala en listas con viñetas claras.
+2. PARA PREGUNTAS RELACIONADAS CON VETERINARIA PERO SIN INFORMACIÓN SUFICIENTE:
+   - Reconoce que la pregunta es relevante
+   - Explica que necesitas más información especializada
+   - Proporciona este enlace de WhatsApp para contactar un especialista:
+     "Para obtener información más detallada sobre este tema, te recomiendo contactar directamente a nuestros especialistas: https://wa.me/5959749898?text=Hola%2C%20tengo%20una%20consulta%20veterinaria"
 
-Si la información está incompleta o falta, responde: "No tengo suficiente información para responder a esa pregunta."
+3. PARA PREGUNTAS CON INFORMACIÓN DISPONIBLE:
+   - Responde con lenguaje natural, claro y profesional
+   - Organiza la información de manera fácil de entender
+   - Usa listas con viñetas para horarios u información estructurada
+   - Evita saltos de línea innecesarios
 
-Si la pregunta no está relacionada con el contenido, responde cordialmente:
-"La pregunta no está relacionada con el contenido de la organización. Por favor, formula una consulta relacionada con la organización."
+4. PARA PREGUNTAS COMPLETAMENTE FUERA DEL CONTEXTO VETERINARIO:
+   - Responde de manera amigable y comprensiva
+   - Explica que te especializas en temas veterinarios
+   - Sugiere ejemplos de preguntas relevantes que pueden hacer
+   - Mantén un tono positivo y servicial
 
-Contexto:
+Contexto disponible:
 \"\"\"{context}\"\"\"
 
-Pregunta: {query}
+Pregunta del usuario: {query}
 
 Respuesta completa y bien formateada:
 """
-
+        
         response = modelo.generate_content(prompt)
         return {"respuesta": response.text.strip()}
-
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
