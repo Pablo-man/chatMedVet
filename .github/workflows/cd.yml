@@ -14,9 +14,13 @@ jobs:
   
   ec2-cd-medvetChat:
     needs: [login-push-medvetChat]
-    if: always()
     uses: ./.github/workflows/aws.yml
     secrets:
       ec2_host: ${{ secrets.AWS_HOST }}
       ec2_key: ${{ secrets.AWS_KEY }}
       docker_username: ${{ secrets.DOCKER_USERNAME }}
+      repository_name: ${{ secrets.DOCKER_REPOSITORY_NAME }}
+      openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+      qdrant_api_key: ${{ secrets.QDRANT_API_KEY }}
+      qdrant_url: ${{ secrets.QDRANT_URL }}
+  

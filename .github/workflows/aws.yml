@@ -9,6 +9,14 @@ on:
         required: true
       ec2_key:
         required: true
+      repository_name:
+        required: true
+      qdrant_api_key:
+        required: true
+      qdrant_url:
+        required: true
+      openai_api_key:
+        required: true
 
 jobs:
   connect_update:
@@ -35,15 +43,18 @@ jobs:
           else
             echo "Docker ya está instalado."
           fi
-
-          if ! sudo systemctl is-active --quiet docker; then
-            sudo systemctl start docker
-          fi  
-
-          cd /home/ubuntu
-
+          
           sudo docker pull ${{ secrets.docker_username }}/${{ secrets.repository_name }}:latest
+
+          # Detener y eliminar contenedor existente (si existe)
+          echo "Deteniendo contenedor existente..."
           sudo docker stop medvetChat || true
           sudo docker rm medvetChat || true
-          sudo docker run -d --name medvetChat -p 8000:8000 ${{ secrets.docker_username }}/${{ secrets.repository_name }}:latest
-          echo "Aplicación desplegada y ejecutándose en el contenedor 'medvetChat'."
+            
+          # Limpiar imágenes antiguas para ahorrar espacio
+          echo "Limpiando imágenes antiguas..."
+          sudo docker image prune -f
+            
+          # Ejecutar nuevo contenedor
+          echo "Iniciando nuevo contenedor..."
+          sudo docker run -d --name medvetChat -p 8000:8000 --restart unless-stopped -e QDRANT_URL=${{ secrets.qdrant_url }} -e QDRANT_API_KEY=${{ secrets.qdrant_api_key }} -e OPENAI_API_KEY=${{ secrets.openai_api_key }} ${{ secrets.docker_username }}/${{ secrets.repository_name }}:latest
