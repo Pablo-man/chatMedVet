@@ -1,8 +1,8 @@
-qdrant-client
 fastapi
-uvicorn 
-google-generativeai 
-python-dotenv
-sentence-transformers
+uvicorn
 python-multipart
+qdrant-client
 pypdf
+python-dotenv
+openai
+pydantic
